@@ -15,7 +15,7 @@
 % vr is the optimal value of the randomized problem
 % cpur is the computational time of the randomized problem is seconds
 % iter is the number of iterations required to solve the randomized problem
-% xd is the solution of the deterministic problem, a column vector of length J
+% xd is the solution of the deterministic problem, a column vector of length I*J
 % vd is the optimal value of the deterministic problem
 % cpud is the computational time of the deterministic problem is seconds
 
@@ -39,16 +39,12 @@ xxi = reshape (xi,I*J,N);
 
 % Set Gurobi parameters
 params.outputflag = 0;
-params.MIPGap = 0.01;
-params.MIPFocus=0;
-params.IntFeasTol = 1e-2;
-params.TimeLimit = 36000;
 
 %% Without Randomization
 %%
 % Mathematical model: order of variables:  x_ij, gamma_ln, s_n, lam
 
-% Create a Gurobi model object
+% Create a Gurobi model object for the determistic problem
 clear modeld
 modeld.A = [repmat(speye(I),1,J),sparse(I,N*L+N+1);kron(speye(J),ones(1,I)),sparse(J,N*L+N+1);xxi',dd,-speye(N),sparse(N,1);-repmat(speye(I*J),N,1),kron(speye(N),C'),sparse(I*J*N,N),-ones(I*J*N,1) ; repmat(speye(I*J),N,1),-kron(speye(N),C'),sparse(I*J*N,N),-ones(I*J*N,1)];
 modeld.rhs = [ones(I+J,1);zeros(N+2*N*I*J,1)];
@@ -68,15 +64,18 @@ xd = sold(1:I*J); % Deteministic problem optimal solution
 
 
 %% With Randomization
-%% Solve the relaxed deterministic problem 
+%% Solve the LP-relaxed deterministic problem
+% Create a Gurobi model object for the LP-relaxed determistic problem
 modeld.vtype = repmat('C',1,I*J+1+N+N*L); % Use the same model of the deterministic problem, just make all variables continuous
 gurobi_write(modeld, 'mip.lp');
-result = gurobi(modeld, params); % Solve the relaxed deterministic problem
+result = gurobi(modeld, params); % Solve the LP-relaxed deterministic problem
 solr = result.x;
-vr = result.objval; % Optimal value of the relaxed deterministic problem, also the optimal value of the randomized problem
-xrel = solr(1:I*J); % Solution of the relaxed problem
+vr = result.objval; % Optimal value of the LP-relaxed deterministic problem, also the optimal value of the randomized problem
+xrel = solr(1:I*J); % Solution of the LP-relaxed problem
+
+% Initialize parameters for the randomized problem
 xnew = xd; % Use the deterministic problem solution to initiate the randomized problem
-diff = 10000; % Some arbitrary large number
+diff = 100000; % Some arbitrary large number
 f = ones(1,I*J); % Initial objective function of the master problem
 Aeq = sparse(1,I*J); % Initial equality constraints of the master problem
 Aineq = [-speye(I*J);-speye(I*J)]; % Initial inequality constraints of the master problem
@@ -84,7 +83,7 @@ ll = zeros(1,I*J); % Lower bound for variables in the master problem
 xsols1 = xd; % Initialize the solutions matrix using the deterministic solution
 tic
 iter = 0; % Start counting the iterations
-while diff > 0.1 && iter < 10000 % If the difference is still large or the max number of iterations is not reached, continue
+while diff > 0.02 % If the difference is greater than the tolerance
     iter = iter+1; % Increment the iterations
 %% Solve the master problem to find the optimal probabilities of solutions
 % order of variables: \theta_ij, p_k
